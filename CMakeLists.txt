@@ -40,6 +40,7 @@ add_library(rfc862_lib STATIC)
 target_sources(rfc862_lib
   PUBLIC FILE_SET CXX_MODULES FILES
     src/rfc862.cppm
+    src/fd.cppm
 )
 target_link_libraries(rfc862_lib PUBLIC rfc862_options)
 

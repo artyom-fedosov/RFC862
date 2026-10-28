@@ -10,7 +10,7 @@ set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 add_executable(rfc862_tests
-  module_test.cpp
+  fd_test.cpp
 )
 target_link_libraries(rfc862_tests PRIVATE rfc862_lib GTest::gtest_main)
 
