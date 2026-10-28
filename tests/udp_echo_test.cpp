@@ -3,6 +3,12 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
+#include <vector>
+
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 
@@ -126,4 +132,117 @@ TEST_F(FakeUdpEcho, YieldsAfterBatchLimitSoTcpClientsAreServed) {
     const auto echoed = batch.echo_all(-1);
     // Then
     EXPECT_EQ(echoed, rfc862::udp_batch_size * rfc862::max_batches_per_event);
+}
+
+namespace {
+
+class LoopbackUdpEcho : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        auto socket = rfc862::make_udp_socket(0);
+        ASSERT_TRUE(socket.has_value()) << socket.error().message();
+        server = std::move(*socket);
+        const auto port = rfc862::local_port(server.get());
+        ASSERT_TRUE(port.has_value());
+        server_address.sin_family = AF_INET;
+        server_address.sin_port = htons(*port);
+        server_address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    }
+
+    [[nodiscard]] static rfc862::FileDescriptor make_client() {
+        rfc862::FileDescriptor client{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
+        const timeval timeout{.tv_sec = 2, .tv_usec = 0};
+        ::setsockopt(client.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+        const int buffer = 4 * 1024 * 1024;
+        ::setsockopt(client.get(), SOL_SOCKET, SO_RCVBUF, &buffer, sizeof(buffer));
+        return client;
+    }
+
+    void send_from(const rfc862::FileDescriptor& client, const std::vector<std::byte>& data) const {
+        ASSERT_EQ(
+            ::sendto(client.get(), data.data(), data.size(), 0,
+                     reinterpret_cast<const sockaddr*>(&server_address), sizeof(server_address)),
+            static_cast<ssize_t>(data.size()));
+    }
+
+    [[nodiscard]] static std::vector<std::byte> receive(const rfc862::FileDescriptor& client) {
+        std::vector<std::byte> buffer(rfc862::max_datagram_size);
+        const ssize_t size = ::recv(client.get(), buffer.data(), buffer.size(), 0);
+        buffer.resize(size < 0 ? 0 : static_cast<std::size_t>(size));
+        return buffer;
+    }
+
+    rfc862::FileDescriptor server;
+    sockaddr_in server_address{};
+    rfc862::UdpEchoBatch batch;
+};
+
+}  // namespace
+
+TEST_F(LoopbackUdpEcho, EchoesDatagramToSender) {
+    // Given
+    const auto client = make_client();
+    send_from(client, bytes("hello"));
+    // When
+    const auto echoed = batch.echo_all(server.get());
+    // Then
+    EXPECT_EQ(echoed, 1U);
+    EXPECT_EQ(receive(client), bytes("hello"));
+}
+
+TEST_F(LoopbackUdpEcho, AnswersEachSenderSeparately) {
+    // Given
+    const auto alice = make_client();
+    const auto bob = make_client();
+    send_from(alice, bytes("from alice"));
+    send_from(bob, bytes("from bob"));
+    // When
+    const auto echoed = batch.echo_all(server.get());
+    // Then
+    EXPECT_EQ(echoed, 2U);
+    EXPECT_EQ(receive(alice), bytes("from alice"));
+    EXPECT_EQ(receive(bob), bytes("from bob"));
+}
+
+TEST_F(LoopbackUdpEcho, EchoesManyDatagramsAcrossBatches) {
+    // Given
+    const auto client = make_client();
+    constexpr std::size_t count = 200;
+    for (std::size_t i = 0; i < count; ++i) {
+        send_from(client, {static_cast<std::byte>(i)});
+    }
+    // When
+    const auto echoed = batch.echo_all(server.get());
+    // Then
+    EXPECT_EQ(echoed, count);
+    for (std::size_t i = 0; i < count; ++i) {
+        EXPECT_EQ(receive(client), std::vector{static_cast<std::byte>(i)});
+    }
+}
+
+TEST_F(LoopbackUdpEcho, EchoesEmptyDatagram) {
+    // Given
+    const auto client = make_client();
+    send_from(client, {});
+    // When
+    const auto echoed = batch.echo_all(server.get());
+    // Then
+    EXPECT_EQ(echoed, 1U);
+    std::vector<std::byte> buffer(16);
+    EXPECT_EQ(::recv(client.get(), buffer.data(), buffer.size(), 0), 0);
+}
+
+TEST_F(LoopbackUdpEcho, EchoesLargestIpv4Datagram) {
+    // Given
+    const auto client = make_client();
+    std::vector<std::byte> payload(65507);
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::byte>(i % 253);
+    }
+    send_from(client, payload);
+    // When
+    const auto echoed = batch.echo_all(server.get());
+    // Then
+    EXPECT_EQ(echoed, 1U);
+    EXPECT_EQ(receive(client), payload);
 }
