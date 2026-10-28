@@ -43,6 +43,10 @@ export namespace rfc862 {
     return fd;
 }
 
+[[nodiscard]] Result<FileDescriptor> make_udp_socket(std::uint16_t port) {
+    return make_bound_socket(SOCK_DGRAM, port);
+}
+
 [[nodiscard]] Result<std::uint16_t> local_port(int fd) {
     sockaddr_in6 address{};
     socklen_t length = sizeof(address);

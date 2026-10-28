@@ -25,3 +25,15 @@ TEST(TcpListener, BindsToEphemeralPort) {
     ASSERT_TRUE(port.has_value()) << port.error().message();
     EXPECT_GT(*port, 0);
 }
+
+TEST(UdpSocket, BindsToEphemeralPort) {
+    // Given
+    constexpr std::uint16_t any_port = 0;
+    // When
+    const auto socket = rfc862::make_udp_socket(any_port);
+    // Then
+    ASSERT_TRUE(socket.has_value()) << socket.error().message();
+    const auto port = rfc862::local_port(socket->get());
+    ASSERT_TRUE(port.has_value()) << port.error().message();
+    EXPECT_GT(*port, 0);
+}
