@@ -2,7 +2,10 @@
 
 #include <cstdint>
 
+#include <arpa/inet.h>
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #include <gtest/gtest.h>
 
@@ -16,6 +19,21 @@ bool is_nonblocking(int fd) {
 
 bool is_close_on_exec(int fd) {
     return (::fcntl(fd, F_GETFD) & FD_CLOEXEC) != 0;
+}
+
+int ipv6_only(int fd) {
+    int value = -1;
+    socklen_t length = sizeof(value);
+    ::getsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &value, &length);
+    return value;
+}
+
+bool connect_ipv4_loopback(int fd, std::uint16_t port) {
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    return ::connect(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0;
 }
 
 }  // namespace
@@ -72,4 +90,27 @@ TEST(UdpSocket, IsNonBlockingAndCloseOnExec) {
     ASSERT_TRUE(socket.has_value()) << socket.error().message();
     EXPECT_TRUE(is_nonblocking(socket->get()));
     EXPECT_TRUE(is_close_on_exec(socket->get()));
+}
+
+TEST(TcpListener, AcceptsIpv4Clients) {
+    // Given
+    const auto listener = rfc862::make_tcp_listener(0);
+    ASSERT_TRUE(listener.has_value()) << listener.error().message();
+    const auto port = rfc862::local_port(listener->get());
+    ASSERT_TRUE(port.has_value());
+    const rfc862::FileDescriptor client{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
+    // When
+    const bool connected = connect_ipv4_loopback(client.get(), *port);
+    // Then
+    EXPECT_TRUE(connected);
+    EXPECT_EQ(ipv6_only(listener->get()), 0);
+}
+
+TEST(UdpSocket, IsDualStack) {
+    // Given
+    // When
+    const auto socket = rfc862::make_udp_socket(0);
+    // Then
+    ASSERT_TRUE(socket.has_value()) << socket.error().message();
+    EXPECT_EQ(ipv6_only(socket->get()), 0);
 }
