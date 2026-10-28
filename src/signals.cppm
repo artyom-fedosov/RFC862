@@ -12,6 +12,7 @@ module;
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <ctime>
 #include <expected>
 #include <system_error>
 #include <utility>
@@ -36,11 +37,7 @@ class SignalGuard {
     // so the termination signals are never delivered asynchronously to any of them.
     [[nodiscard]] static Result<SignalGuard> install() {
         SignalGuard guard;
-        sigset_t mask;
-        sigemptyset(&mask);
-        for (const int signal : termination_signals) {
-            sigaddset(&mask, signal);
-        }
+        const sigset_t mask = termination_mask();
         if (const int error = ::pthread_sigmask(SIG_BLOCK, &mask, &guard.previous_mask_);
             error != 0) {
             return std::unexpected{std::error_code{error, std::system_category()}};
@@ -72,12 +69,18 @@ class SignalGuard {
     SignalGuard& operator=(const SignalGuard&) = delete;
 
     // Restores the signal mask and SIGPIPE disposition that were in effect before.
+    // Termination signals still pending (e.g. a second Ctrl+C during shutdown) are
+    // consumed first; unblocking them would otherwise kill the process on the spot.
     ~SignalGuard() {
         fd_.reset();
         if (sigpipe_installed_) {
             ::sigaction(SIGPIPE, &previous_sigpipe_, nullptr);
         }
         if (mask_installed_) {
+            const sigset_t mask = termination_mask();
+            const timespec poll{};
+            while (::sigtimedwait(&mask, nullptr, &poll) > 0) {
+            }
             ::pthread_sigmask(SIG_SETMASK, &previous_mask_, nullptr);
         }
     }
@@ -98,6 +101,15 @@ class SignalGuard {
 
   private:
     SignalGuard() = default;
+
+    static sigset_t termination_mask() noexcept {
+        sigset_t mask;
+        sigemptyset(&mask);
+        for (const int signal : termination_signals) {
+            sigaddset(&mask, signal);
+        }
+        return mask;
+    }
 
     FileDescriptor fd_;
     sigset_t previous_mask_{};

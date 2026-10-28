@@ -139,3 +139,27 @@ INSTANTIATE_TEST_SUITE_P(AllTerminationSignals, TerminationSignal,
                          [](const auto& signal) {
                              return std::string{sigabbrev_np(signal.param)};
                          });
+
+TEST_F(ServerProcess, SurvivesSigpipe) {
+    // Given
+    ASSERT_TRUE(connected_client().valid());
+    // When
+    ASSERT_EQ(::kill(child, SIGPIPE), 0);
+    // Then
+    EXPECT_TRUE(connected_client().valid());
+    ASSERT_EQ(::kill(child, SIGTERM), 0);
+    EXPECT_EQ(reap(), 0);
+}
+
+TEST_F(ServerProcess, ShutsDownCleanlyWhenSignalledTwice) {
+    // Given
+    const auto client = connected_client();
+    ASSERT_TRUE(client.valid());
+    // When
+    ASSERT_EQ(::kill(child, SIGTERM), 0);
+    ASSERT_EQ(::kill(child, SIGINT), 0);
+    const int status = reap();
+    // Then
+    EXPECT_EQ(status, 0);
+    EXPECT_TRUE(rfc862::test::receives_eof(client));
+}
