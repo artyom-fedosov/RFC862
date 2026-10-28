@@ -68,6 +68,7 @@ jobs:
 
       - name: Smoke test on port 7
         if: matrix.config.build_type == 'Release'
+        shell: bash
         run: |
           ./build/rfc862 &
           pid=$!
