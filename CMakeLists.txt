@@ -43,6 +43,7 @@ target_sources(rfc862_lib
     src/common.cppm
     src/fd.cppm
     src/socket.cppm
+    src/epoll.cppm
 )
 target_link_libraries(rfc862_lib PUBLIC rfc862_options)
 

@@ -6,3 +6,4 @@ export module rfc862;
 export import :common;
 export import :fd;
 export import :socket;
+export import :epoll;
