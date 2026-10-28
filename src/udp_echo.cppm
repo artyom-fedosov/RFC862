@@ -41,6 +41,9 @@ struct SystemDatagramIo {
 
 // Datagrams moved per system call.
 inline constexpr std::size_t udp_batch_size = 64;
+// Batches served per readiness event before yielding to the worker's other sockets.
+// The UDP socket is polled level-triggered, so leftover datagrams are reported again.
+inline constexpr std::size_t max_batches_per_event = 8;
 // Largest UDP payload over IPv4 or IPv6 (without jumbograms) fits in 64 KiB - 1.
 inline constexpr std::size_t max_datagram_size = 65535;
 
@@ -73,6 +76,23 @@ class BasicUdpEchoBatch {
         }
         send_all(fd, std::span{messages_}.first(count));
         return count;
+    }
+
+    // Echoes batches until the queue is drained, a receive fails, or the fairness cap
+    // is reached. Returns the number of datagrams echoed.
+    std::size_t echo_all(int fd) {
+        std::size_t total = 0;
+        for (std::size_t batches = 0; batches < max_batches_per_event; ++batches) {
+            const auto echoed = echo_once(fd);
+            if (!echoed) {
+                break;
+            }
+            total += *echoed;
+            if (*echoed < udp_batch_size) {
+                break;
+            }
+        }
+        return total;
     }
 
     [[nodiscard]] Io& io() noexcept { return io_; }

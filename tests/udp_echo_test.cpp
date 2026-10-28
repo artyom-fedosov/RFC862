@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 
 #include <gtest/gtest.h>
@@ -100,4 +101,29 @@ TEST_F(FakeUdpEcho, DropsBatchRemainderWhenSendBufferIsFull) {
     ASSERT_TRUE(echoed.has_value()) << echoed.error().message();
     EXPECT_TRUE(io().sent().empty());
     EXPECT_EQ(io().send_calls(), 1);
+}
+
+TEST_F(FakeUdpEcho, KeepsReceivingWhileBatchesAreFull) {
+    // Given
+    const std::size_t total = rfc862::udp_batch_size + 10;
+    for (std::size_t i = 0; i < total; ++i) {
+        io().script_incoming({.payload = bytes("x"), .peer = ipv6_peer(1)});
+    }
+    // When
+    const auto echoed = batch.echo_all(-1);
+    // Then
+    EXPECT_EQ(echoed, total);
+    EXPECT_EQ(io().receive_calls(), 2);
+}
+
+TEST_F(FakeUdpEcho, YieldsAfterBatchLimitSoTcpClientsAreServed) {
+    // Given
+    const std::size_t total = rfc862::udp_batch_size * rfc862::max_batches_per_event * 2;
+    for (std::size_t i = 0; i < total; ++i) {
+        io().script_incoming({.payload = bytes("x"), .peer = ipv6_peer(1)});
+    }
+    // When
+    const auto echoed = batch.echo_all(-1);
+    // Then
+    EXPECT_EQ(echoed, rfc862::udp_batch_size * rfc862::max_batches_per_event);
 }
