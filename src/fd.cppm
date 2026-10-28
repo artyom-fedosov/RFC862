@@ -11,6 +11,7 @@ export namespace rfc862 {
 
 class FileDescriptor {
   public:
+    FileDescriptor() noexcept = default;
     explicit FileDescriptor(int fd) noexcept : fd_{fd} {}
 
     FileDescriptor(const FileDescriptor&) = delete;
@@ -19,13 +20,17 @@ class FileDescriptor {
     FileDescriptor& operator=(FileDescriptor&&) = delete;
 
     ~FileDescriptor() {
-        if (fd_ >= 0) {
+        if (valid()) {
             ::close(fd_);
         }
     }
 
+    [[nodiscard]] int get() const noexcept { return fd_; }
+    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
+    explicit operator bool() const noexcept { return valid(); }
+
   private:
-    int fd_;
+    int fd_{-1};
 };
 
 }  // namespace rfc862
