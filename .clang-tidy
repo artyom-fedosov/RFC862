@@ -1,4 +1,6 @@
 ---
+# readability-redundant-declaration is disabled: with C++ modules it reports the
+# standard library declarations merged from several global module fragments.
 Checks: >
   -*,
   bugprone-*,
@@ -20,6 +22,7 @@ Checks: >
   -modernize-use-trailing-return-type,
   -readability-magic-numbers,
   -readability-identifier-length,
-  -readability-function-cognitive-complexity
+  -readability-function-cognitive-complexity,
+  -readability-redundant-declaration
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*/(src|tests)/.*'
