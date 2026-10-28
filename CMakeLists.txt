@@ -28,6 +28,9 @@ elseif(SANITIZE STREQUAL "thread")
 elseif(NOT SANITIZE STREQUAL "")
   message(FATAL_ERROR "SANITIZE must be empty, 'address' or 'thread', got '${SANITIZE}'")
 endif()
+if(STATIC AND NOT SANITIZE STREQUAL "")
+  message(FATAL_ERROR "STATIC cannot be combined with SANITIZE")
+endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   include(CheckIPOSupported)
@@ -57,6 +60,11 @@ endif()
 
 add_executable(rfc862 src/main.cpp)
 target_link_libraries(rfc862 PRIVATE rfc862_lib)
+if(STATIC)
+  # No runtime dependency on the distribution's libc or libstdc++. Safe with glibc
+  # because the program never resolves names, so NSS is never loaded.
+  target_link_options(rfc862 PRIVATE -static)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
