@@ -10,6 +10,7 @@ module;
 #include <cstdint>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -46,24 +47,48 @@ class BasicTcpEchoConnection {
     explicit BasicTcpEchoConnection(FileDescriptor fd, Io io = {}) noexcept
         : fd_{std::move(fd)}, io_{std::move(io)} {}
 
-    // Reads into the worker's shared scratch buffer and writes it straight back.
+    // Reads into the worker's shared scratch buffer and writes it straight back. Only
+    // bytes the socket would not take are copied into the connection's own buffer;
+    // reading then pauses until they drain (backpressure).
     [[nodiscard]] Progress on_readable(std::span<std::byte> scratch) {
         for (;;) {
             const ssize_t received = io_.read(fd_.get(), scratch);
             if (received > 0) {
-                io_.write(fd_.get(), scratch.first(static_cast<std::size_t>(received)));
+                const auto data = scratch.first(static_cast<std::size_t>(received));
+                const std::size_t written = write_some(data);
+                if (written < data.size()) {
+                    // std::vector::assign compiles to memcpy, which glibc vectorises
+                    // (AVX2/AVX-512/NEON/SVE) and dispatches at runtime.
+                    const auto rest = data.subspan(written);
+                    pending_.assign(rest.begin(), rest.end());
+                    return Progress::WantWrite;
+                }
                 continue;
             }
             return Progress::WantRead;
         }
     }
 
-    [[nodiscard]] std::size_t pending_bytes() const noexcept { return 0; }
+    [[nodiscard]] std::size_t pending_bytes() const noexcept { return pending_.size(); }
     [[nodiscard]] int fd() const noexcept { return fd_.get(); }
     [[nodiscard]] Io& io() noexcept { return io_; }
 
   private:
+    // Writes as much of data as the socket accepts without blocking.
+    std::size_t write_some(std::span<const std::byte> data) {
+        std::size_t written = 0;
+        while (written < data.size()) {
+            const ssize_t sent = io_.write(fd_.get(), data.subspan(written));
+            if (sent <= 0) {
+                break;
+            }
+            written += static_cast<std::size_t>(sent);
+        }
+        return written;
+    }
+
     FileDescriptor fd_;
+    std::vector<std::byte> pending_;
     [[no_unique_address]] Io io_;
 };
 

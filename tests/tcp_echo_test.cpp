@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <array>
+#include <cerrno>
 #include <cstddef>
 
 #include <gtest/gtest.h>
@@ -33,4 +34,17 @@ TEST_F(FakeConnection, EchoesReadBytesAndWaitsForMore) {
     EXPECT_EQ(progress, rfc862::Progress::WantRead);
     EXPECT_EQ(io().written(), bytes("abc"));
     EXPECT_EQ(connection.pending_bytes(), 0U);
+}
+
+TEST_F(FakeConnection, KeepsUnwrittenBytesPendingOnShortWrite) {
+    // Given
+    io().script_read("hello");
+    io().script_write({.max_bytes = 2});
+    io().script_write({.error = EAGAIN});
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantWrite);
+    EXPECT_EQ(io().written(), bytes("he"));
+    EXPECT_EQ(connection.pending_bytes(), 3U);
 }
