@@ -78,3 +78,14 @@ TEST_F(FakeConnection, KeepsWaitingWhilePendingBytesCannotBeWritten) {
     EXPECT_EQ(io().written(), bytes("hel"));
     EXPECT_EQ(connection.pending_bytes(), 2U);
 }
+
+TEST_F(FakeConnection, ClosesWhenPeerFinishesSending) {
+    // Given
+    io().script_read("bye");
+    io().script_eof();
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::Closed);
+    EXPECT_EQ(io().written(), bytes("bye"));
+}

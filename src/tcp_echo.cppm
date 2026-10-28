@@ -66,6 +66,11 @@ class BasicTcpEchoConnection {
                 }
                 continue;
             }
+            if (received == 0) {
+                // RFC 862: the connection lasts until the user terminates it. Reading
+                // pauses while bytes are pending, so everything has been echoed by now.
+                return Progress::Closed;
+            }
             return Progress::WantRead;
         }
     }
