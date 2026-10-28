@@ -8,6 +8,7 @@ module;
 #include <expected>
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 
 export module rfc862:socket;
@@ -79,6 +80,10 @@ export namespace rfc862 {
     FileDescriptor fd{::accept4(listener_fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC)};
     if (!fd) {
         return fail();
+    }
+    // Echo replies are latency-sensitive; don't hold small writes back for coalescing.
+    if (auto set = set_option(fd.get(), IPPROTO_TCP, TCP_NODELAY, 1); !set) {
+        return std::unexpected{set.error()};
     }
     return fd;
 }

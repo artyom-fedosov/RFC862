@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 
 #include <gtest/gtest.h>
@@ -27,6 +28,13 @@ int ipv6_only(int fd) {
     socklen_t length = sizeof(value);
     ::getsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &value, &length);
     return value;
+}
+
+bool has_no_delay(int fd) {
+    int value = 0;
+    socklen_t length = sizeof(value);
+    ::getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &value, &length);
+    return value != 0;
 }
 
 bool connect_ipv4_loopback(int fd, std::uint16_t port) {
@@ -149,4 +157,21 @@ TEST(AcceptConnection, ReportsWouldBlockWithoutPendingClient) {
     // Then
     ASSERT_FALSE(connection.has_value());
     EXPECT_EQ(connection.error(), std::errc::resource_unavailable_try_again);
+}
+
+TEST(AcceptConnection, ReturnsNonBlockingNoDelaySocket) {
+    // Given
+    const auto listener = rfc862::make_tcp_listener(0);
+    ASSERT_TRUE(listener.has_value()) << listener.error().message();
+    const auto port = rfc862::local_port(listener->get());
+    ASSERT_TRUE(port.has_value());
+    const rfc862::FileDescriptor client{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
+    ASSERT_TRUE(connect_ipv4_loopback(client.get(), *port));
+    // When
+    const auto connection = rfc862::accept_connection(listener->get());
+    // Then
+    ASSERT_TRUE(connection.has_value()) << connection.error().message();
+    EXPECT_TRUE(is_nonblocking(connection->get()));
+    EXPECT_TRUE(is_close_on_exec(connection->get()));
+    EXPECT_TRUE(has_no_delay(connection->get()));
 }
