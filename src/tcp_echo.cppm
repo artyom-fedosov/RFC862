@@ -39,6 +39,10 @@ struct SystemStreamIo {
     }
 };
 
+// Reads served per readiness event before yielding to other connections. Connections
+// are polled level-triggered, so leftover input is reported again on the next round.
+inline constexpr std::size_t max_reads_per_event = 16;
+
 // What the connection waits for next.
 enum class Progress : std::uint8_t { WantRead, WantWrite, Closed };
 
@@ -52,7 +56,7 @@ class BasicTcpEchoConnection {
     // bytes the socket would not take are copied into the connection's own buffer;
     // reading then pauses until they drain (backpressure).
     [[nodiscard]] Progress on_readable(std::span<std::byte> scratch) {
-        for (;;) {
+        for (std::size_t reads = 0; reads < max_reads_per_event; ++reads) {
             const ssize_t received = io_.read(fd_.get(), scratch);
             if (received > 0) {
                 const auto data = scratch.first(static_cast<std::size_t>(received));
@@ -83,6 +87,7 @@ class BasicTcpEchoConnection {
             }
             return Progress::Closed;
         }
+        return Progress::WantRead;
     }
 
     // Continues sending the bytes left over from a short write.

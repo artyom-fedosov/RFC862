@@ -142,3 +142,15 @@ TEST_F(FakeConnection, RetriesInterruptedWrite) {
     EXPECT_EQ(progress, rfc862::Progress::WantRead);
     EXPECT_EQ(io().written(), bytes("data"));
 }
+
+TEST_F(FakeConnection, YieldsAfterReadLimitSoOtherClientsAreServed) {
+    // Given
+    for (std::size_t i = 0; i < rfc862::max_reads_per_event * 2; ++i) {
+        io().script_read("x");
+    }
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantRead);
+    EXPECT_EQ(static_cast<std::size_t>(io().read_calls()), rfc862::max_reads_per_event);
+}
