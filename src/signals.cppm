@@ -12,7 +12,6 @@ module;
 #include <array>
 #include <cerrno>
 #include <csignal>
-#include <ctime>
 #include <expected>
 #include <system_error>
 #include <utility>
@@ -31,19 +30,21 @@ export namespace rfc862 {
 
 inline constexpr std::array termination_signals{SIGINT, SIGTERM, SIGHUP, SIGQUIT};
 
+// Installing is a one-way, process-wide change: the termination signals stay blocked
+// for the rest of the process lifetime. Unblocking them again would let a signal that
+// arrives during the last moments of shutdown (e.g. a second Ctrl+C) kill the process
+// with its default action instead of letting it exit normally; a signal that arrives
+// then simply stays pending and is discarded at exit.
 class SignalGuard {
   public:
     // Must be called before any thread is started: threads inherit the blocked mask,
     // so the termination signals are never delivered asynchronously to any of them.
     [[nodiscard]] static Result<SignalGuard> install() {
-        SignalGuard guard;
         const sigset_t mask = termination_mask();
-        if (const int error = ::pthread_sigmask(SIG_BLOCK, &mask, &guard.previous_mask_);
-            error != 0) {
+        if (const int error = ::pthread_sigmask(SIG_BLOCK, &mask, nullptr); error != 0) {
             return std::unexpected{std::error_code{error, std::system_category()}};
         }
-        guard.mask_installed_ = true;
-        guard.fd_.reset(::signalfd(-1, &mask, SFD_CLOEXEC));
+        SignalGuard guard{FileDescriptor{::signalfd(-1, &mask, SFD_CLOEXEC)}};
         if (!guard.fd_) {
             return fail();
         }
@@ -51,38 +52,10 @@ class SignalGuard {
         // just that connection instead of killing the process.
         struct sigaction ignore{};
         ignore.sa_handler = SIG_IGN;
-        if (::sigaction(SIGPIPE, &ignore, &guard.previous_sigpipe_) != 0) {
+        if (::sigaction(SIGPIPE, &ignore, nullptr) != 0) {
             return fail();
         }
-        guard.sigpipe_installed_ = true;
         return guard;
-    }
-
-    SignalGuard(SignalGuard&& other) noexcept
-        : fd_{std::move(other.fd_)},
-          previous_mask_{other.previous_mask_},
-          previous_sigpipe_{other.previous_sigpipe_},
-          mask_installed_{std::exchange(other.mask_installed_, false)},
-          sigpipe_installed_{std::exchange(other.sigpipe_installed_, false)} {}
-    SignalGuard& operator=(SignalGuard&&) = delete;
-    SignalGuard(const SignalGuard&) = delete;
-    SignalGuard& operator=(const SignalGuard&) = delete;
-
-    // Restores the signal mask and SIGPIPE disposition that were in effect before.
-    // Termination signals still pending (e.g. a second Ctrl+C during shutdown) are
-    // consumed first; unblocking them would otherwise kill the process on the spot.
-    ~SignalGuard() {
-        fd_.reset();
-        if (sigpipe_installed_) {
-            ::sigaction(SIGPIPE, &previous_sigpipe_, nullptr);
-        }
-        if (mask_installed_) {
-            const sigset_t mask = termination_mask();
-            const timespec poll{};
-            while (::sigtimedwait(&mask, nullptr, &poll) > 0) {
-            }
-            ::pthread_sigmask(SIG_SETMASK, &previous_mask_, nullptr);
-        }
     }
 
     // Blocks until a termination signal arrives and returns its number.
@@ -100,7 +73,7 @@ class SignalGuard {
     }
 
   private:
-    SignalGuard() = default;
+    explicit SignalGuard(FileDescriptor fd) noexcept : fd_{std::move(fd)} {}
 
     static sigset_t termination_mask() noexcept {
         sigset_t mask;
@@ -112,10 +85,6 @@ class SignalGuard {
     }
 
     FileDescriptor fd_;
-    sigset_t previous_mask_{};
-    struct sigaction previous_sigpipe_{};
-    bool mask_installed_ = false;
-    bool sigpipe_installed_ = false;
 };
 
 // Serves until a termination signal arrives, then stops every worker and waits until
