@@ -12,6 +12,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(STATIC "Link the executable fully statically" OFF)
+option(VECTORIZE_REPORT "Report loops in src/ that the compiler could not vectorize" OFF)
 set(SANITIZE "" CACHE STRING "Sanitizer to enable: address (ASan+UBSan) or thread (TSan)")
 set_property(CACHE SANITIZE PROPERTY STRINGS "" address thread)
 
@@ -50,6 +51,9 @@ target_sources(rfc862_lib
     src/signals.cppm
 )
 target_link_libraries(rfc862_lib PUBLIC rfc862_options)
+if(VECTORIZE_REPORT)
+  target_compile_options(rfc862_lib PRIVATE -fopt-info-vec-missed)
+endif()
 
 add_executable(rfc862 src/main.cpp)
 target_link_libraries(rfc862 PRIVATE rfc862_lib)

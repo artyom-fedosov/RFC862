@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.arch }} ${{ matrix.config.name }}
+    runs-on: ${{ matrix.runner }}
+    # The newest released GCC; the runner images only ship older ones.
+    container:
+      image: gcc:latest
+      # Lets the TSan job lower the ASLR entropy, which TSan cannot handle otherwise.
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        config:
+          - { name: Release, build_type: Release, sanitize: "" }
+          - { name: Debug ASan+UBSan, build_type: Debug, sanitize: address }
+          - { name: Debug TSan, build_type: Debug, sanitize: thread }
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    env:
+      CXX: g++
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
+      TSAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake ninja-build socat
+          g++ --version
+          cmake --version
+
+      - name: Lower ASLR entropy for TSan
+        if: matrix.config.sanitize == 'thread'
+        run: sysctl vm.mmap_rnd_bits=28
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }}
+          -DSANITIZE=${{ matrix.config.sanitize }}
+          -DVECTORIZE_REPORT=${{ matrix.config.build_type == 'Release' && 'ON' || 'OFF' }}
+          -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 4
+
+      - name: Smoke test on port 7
+        if: matrix.config.build_type == 'Release'
+        run: |
+          ./build/rfc862 &
+          pid=$!
+          sleep 0.5
+          test "$(echo hello | socat - TCP:127.0.0.1:7)" = hello
+          test "$(echo hello | socat -t1 - UDP:127.0.0.1:7)" = hello
+          exec 3<>/dev/tcp/127.0.0.1/7
+          kill -TERM "$pid"
+          wait "$pid"
+          test "$(timeout 5 cat <&3 | wc -c)" = 0
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install newest LLVM
+        run: |
+          curl -fsSLo llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh all
+          echo "LLVM_VERSION=$(grep -oP '^CURRENT_LLVM_STABLE=\K[0-9]+' llvm.sh)" >> "$GITHUB_ENV"
+      - name: Check formatting
+        run: |
+          find src tests \( -name '*.cpp' -o -name '*.cppm' \) \
+            -exec "clang-format-$LLVM_VERSION" --dry-run --Werror {} +
+
+  tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install newest LLVM and a C++23 standard library
+        run: |
+          curl -fsSLo llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh all
+          sudo apt-get install -y --no-install-recommends ninja-build g++-14
+          echo "LLVM_VERSION=$(grep -oP '^CURRENT_LLVM_STABLE=\K[0-9]+' llvm.sh)" >> "$GITHUB_ENV"
+      # clang-tidy cannot read GCC module files, so it runs over a Clang build.
+      - name: Build with Clang
+        run: |
+          CXX="clang++-$LLVM_VERSION" cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS="clang-scan-deps-$LLVM_VERSION"
+          cmake --build build --parallel
+      - name: Run clang-tidy
+        run: |
+          "run-clang-tidy-$LLVM_VERSION" -p build -quiet \
+            -clang-tidy-binary "clang-tidy-$LLVM_VERSION" "^$PWD/(src|tests)/"
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Lint workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
+
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - name: Install commitlint
+        run: npm install --no-save @commitlint/cli @commitlint/config-conventional
+      - name: Lint commit messages
+        env:
+          BEFORE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = 0000000000000000000000000000000000000000 ] ||
+             ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            commits=$(git rev-list HEAD)
+          else
+            commits=$(git rev-list "$BEFORE..HEAD")
+          fi
+          for commit in $commits; do
+            git log -1 --format=%B "$commit" | npx commitlint
+          done
