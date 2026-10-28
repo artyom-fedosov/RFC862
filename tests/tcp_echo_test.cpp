@@ -48,3 +48,33 @@ TEST_F(FakeConnection, KeepsUnwrittenBytesPendingOnShortWrite) {
     EXPECT_EQ(io().written(), bytes("he"));
     EXPECT_EQ(connection.pending_bytes(), 3U);
 }
+
+TEST_F(FakeConnection, FlushesPendingBytesInOrderWhenWritable) {
+    // Given
+    io().script_read("hello");
+    io().script_write({.max_bytes = 2});
+    io().script_write({.error = EAGAIN});
+    ASSERT_EQ(connection.on_readable(scratch), rfc862::Progress::WantWrite);
+    // When
+    const auto progress = connection.on_writable();
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantRead);
+    EXPECT_EQ(io().written(), bytes("hello"));
+    EXPECT_EQ(connection.pending_bytes(), 0U);
+}
+
+TEST_F(FakeConnection, KeepsWaitingWhilePendingBytesCannotBeWritten) {
+    // Given
+    io().script_read("hello");
+    io().script_write({.max_bytes = 1});
+    io().script_write({.error = EAGAIN});
+    ASSERT_EQ(connection.on_readable(scratch), rfc862::Progress::WantWrite);
+    io().script_write({.max_bytes = 2});
+    io().script_write({.error = EAGAIN});
+    // When
+    const auto progress = connection.on_writable();
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantWrite);
+    EXPECT_EQ(io().written(), bytes("hel"));
+    EXPECT_EQ(connection.pending_bytes(), 2U);
+}

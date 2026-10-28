@@ -61,6 +61,7 @@ class BasicTcpEchoConnection {
                     // (AVX2/AVX-512/NEON/SVE) and dispatches at runtime.
                     const auto rest = data.subspan(written);
                     pending_.assign(rest.begin(), rest.end());
+                    pending_offset_ = 0;
                     return Progress::WantWrite;
                 }
                 continue;
@@ -69,7 +70,21 @@ class BasicTcpEchoConnection {
         }
     }
 
-    [[nodiscard]] std::size_t pending_bytes() const noexcept { return pending_.size(); }
+    // Continues sending the bytes left over from a short write.
+    [[nodiscard]] Progress on_writable() {
+        const auto rest = std::span{pending_}.subspan(pending_offset_);
+        pending_offset_ += write_some(rest);
+        if (pending_offset_ < pending_.size()) {
+            return Progress::WantWrite;
+        }
+        pending_.clear();
+        pending_offset_ = 0;
+        return Progress::WantRead;
+    }
+
+    [[nodiscard]] std::size_t pending_bytes() const noexcept {
+        return pending_.size() - pending_offset_;
+    }
     [[nodiscard]] int fd() const noexcept { return fd_.get(); }
     [[nodiscard]] Io& io() noexcept { return io_; }
 
@@ -89,6 +104,7 @@ class BasicTcpEchoConnection {
 
     FileDescriptor fd_;
     std::vector<std::byte> pending_;
+    std::size_t pending_offset_ = 0;
     [[no_unique_address]] Io io_;
 };
 
