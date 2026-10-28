@@ -83,3 +83,21 @@ TEST(Epoll, ReportsNewInterestAfterModify) {
     ASSERT_EQ(events->size(), 1U);
     EXPECT_NE(events->front().events & EPOLLOUT, 0U);
 }
+
+TEST(Epoll, StopsReportingRemovedFd) {
+    // Given
+    auto epoll = rfc862::Epoll::create();
+    ASSERT_TRUE(epoll.has_value()) << epoll.error().message();
+    const auto pipe = make_pipe();
+    ASSERT_TRUE(pipe.read_end.valid());
+    ASSERT_TRUE(epoll->add(pipe.read_end.get(), EPOLLIN, 1).has_value());
+    write_byte(pipe.write_end);
+    std::array<epoll_event, 4> buffer{};
+    // When
+    const auto removed = epoll->remove(pipe.read_end.get());
+    // Then
+    ASSERT_TRUE(removed.has_value()) << removed.error().message();
+    const auto events = epoll->wait(buffer, 0);
+    ASSERT_TRUE(events.has_value());
+    EXPECT_TRUE(events->empty());
+}

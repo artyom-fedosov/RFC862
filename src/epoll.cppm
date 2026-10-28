@@ -37,6 +37,8 @@ class Epoll {
         return control(EPOLL_CTL_MOD, fd, events, tag);
     }
 
+    [[nodiscard]] Result<void> remove(int fd) const { return control(EPOLL_CTL_DEL, fd, 0, 0); }
+
     // Waits into a caller-owned buffer so the event loop never allocates.
     [[nodiscard]] Result<std::span<const epoll_event>> wait(std::span<epoll_event> buffer,
                                                             int timeout_ms) const {
