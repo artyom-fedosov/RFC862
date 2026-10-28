@@ -74,6 +74,15 @@ export namespace rfc862 {
     return make_bound_socket(SOCK_DGRAM, port);
 }
 
+// Fails with std::errc::resource_unavailable_try_again once no client is pending.
+[[nodiscard]] Result<FileDescriptor> accept_connection(int listener_fd) {
+    FileDescriptor fd{::accept4(listener_fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC)};
+    if (!fd) {
+        return fail();
+    }
+    return fd;
+}
+
 [[nodiscard]] Result<std::uint16_t> local_port(int fd) {
     sockaddr_in6 address{};
     socklen_t length = sizeof(address);

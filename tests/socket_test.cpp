@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <cstdint>
+#include <system_error>
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -137,4 +138,15 @@ TEST(UdpSocket, SharesPortWithAnotherSocket) {
     const auto second = rfc862::make_udp_socket(*port);
     // Then
     EXPECT_TRUE(second.has_value()) << second.error().message();
+}
+
+TEST(AcceptConnection, ReportsWouldBlockWithoutPendingClient) {
+    // Given
+    const auto listener = rfc862::make_tcp_listener(0);
+    ASSERT_TRUE(listener.has_value()) << listener.error().message();
+    // When
+    const auto connection = rfc862::accept_connection(listener->get());
+    // Then
+    ASSERT_FALSE(connection.has_value());
+    EXPECT_EQ(connection.error(), std::errc::resource_unavailable_try_again);
 }
