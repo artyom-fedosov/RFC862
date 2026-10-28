@@ -5,6 +5,7 @@
 module;
 
 #include <array>
+#include <cerrno>
 #include <concepts>
 #include <cstddef>
 #include <memory>
@@ -57,9 +58,14 @@ class BasicUdpEchoBatch {
     // waiting).
     [[nodiscard]] Result<std::size_t> echo_once(int fd) {
         prepare_for_receive();
-        const int received = io_.recvmmsg(fd, messages_);
-        if (received < 0) {
-            return fail();
+        int received = 0;
+        while ((received = io_.recvmmsg(fd, messages_)) < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return 0;
+            }
+            if (errno != EINTR) {
+                return fail();
+            }
         }
         const auto count = static_cast<std::size_t>(received);
         for (std::size_t i = 0; i < count; ++i) {

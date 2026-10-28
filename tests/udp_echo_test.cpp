@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <cerrno>
+
 #include <gtest/gtest.h>
 
 import rfc862;
@@ -33,4 +35,25 @@ TEST_F(FakeUdpEcho, SendsDatagramBackToItsSender) {
     ASSERT_EQ(io().sent().size(), 1U);
     EXPECT_EQ(io().sent().front().payload, bytes("ping"));
     EXPECT_TRUE(same_peer(io().sent().front().peer, ipv6_peer(4000)));
+}
+
+TEST_F(FakeUdpEcho, ReportsNothingEchoedWhenNoDatagramIsWaiting) {
+    // Given
+    // When
+    const auto echoed = batch.echo_once(-1);
+    // Then
+    ASSERT_TRUE(echoed.has_value()) << echoed.error().message();
+    EXPECT_EQ(*echoed, 0U);
+    EXPECT_TRUE(io().sent().empty());
+}
+
+TEST_F(FakeUdpEcho, RetriesInterruptedReceive) {
+    // Given
+    io().script_receive_error(EINTR);
+    io().script_incoming({.payload = bytes("ping"), .peer = ipv6_peer(4000)});
+    // When
+    const auto echoed = batch.echo_once(-1);
+    // Then
+    ASSERT_TRUE(echoed.has_value()) << echoed.error().message();
+    EXPECT_EQ(*echoed, 1U);
 }
