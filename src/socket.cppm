@@ -16,7 +16,7 @@ import :fd;
 namespace rfc862 {
 
 Result<FileDescriptor> make_bound_socket(int type, std::uint16_t port) {
-    FileDescriptor fd{::socket(AF_INET6, type, 0)};
+    FileDescriptor fd{::socket(AF_INET6, type | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)};
     if (!fd) {
         return fail();
     }
