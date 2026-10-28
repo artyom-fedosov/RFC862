@@ -118,3 +118,21 @@ TEST(EventFd, WakesEpollWhenNotified) {
     ASSERT_EQ(events->size(), 1U);
     EXPECT_EQ(events->front().data.u64, 3U);
 }
+
+TEST(EventFd, StopsWakingEpollAfterDrain) {
+    // Given
+    auto epoll = rfc862::Epoll::create();
+    ASSERT_TRUE(epoll.has_value()) << epoll.error().message();
+    auto event = rfc862::EventFd::create();
+    ASSERT_TRUE(event.has_value()) << event.error().message();
+    ASSERT_TRUE(epoll->add(event->fd(), EPOLLIN, 3).has_value());
+    event->notify();
+    event->notify();
+    std::array<epoll_event, 4> buffer{};
+    // When
+    event->drain();
+    // Then
+    const auto events = epoll->wait(buffer, 0);
+    ASSERT_TRUE(events.has_value());
+    EXPECT_TRUE(events->empty());
+}

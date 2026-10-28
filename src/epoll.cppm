@@ -88,6 +88,12 @@ class EventFd {
         [[maybe_unused]] const auto written = ::write(fd_.get(), &one, sizeof(one));
     }
 
+    // Resets the counter to zero. Fails only with EAGAIN when it is already zero.
+    void drain() const noexcept {
+        std::uint64_t value = 0;
+        [[maybe_unused]] const auto read = ::read(fd_.get(), &value, sizeof(value));
+    }
+
     [[nodiscard]] int fd() const noexcept { return fd_.get(); }
 
   private:
