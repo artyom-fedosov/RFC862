@@ -8,6 +8,7 @@ module;
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -55,11 +56,14 @@ class BasicTcpEchoConnection {
             const ssize_t received = io_.read(fd_.get(), scratch);
             if (received > 0) {
                 const auto data = scratch.first(static_cast<std::size_t>(received));
-                const std::size_t written = write_some(data);
-                if (written < data.size()) {
+                const auto written = write_some(data);
+                if (!written) {
+                    return Progress::Closed;
+                }
+                if (*written < data.size()) {
                     // std::vector::assign compiles to memcpy, which glibc vectorises
                     // (AVX2/AVX-512/NEON/SVE) and dispatches at runtime.
-                    const auto rest = data.subspan(written);
+                    const auto rest = data.subspan(*written);
                     pending_.assign(rest.begin(), rest.end());
                     pending_offset_ = 0;
                     return Progress::WantWrite;
@@ -84,7 +88,11 @@ class BasicTcpEchoConnection {
     // Continues sending the bytes left over from a short write.
     [[nodiscard]] Progress on_writable() {
         const auto rest = std::span{pending_}.subspan(pending_offset_);
-        pending_offset_ += write_some(rest);
+        const auto written = write_some(rest);
+        if (!written) {
+            return Progress::Closed;
+        }
+        pending_offset_ += *written;
         if (pending_offset_ < pending_.size()) {
             return Progress::WantWrite;
         }
@@ -100,15 +108,21 @@ class BasicTcpEchoConnection {
     [[nodiscard]] Io& io() noexcept { return io_; }
 
   private:
-    // Writes as much of data as the socket accepts without blocking.
-    std::size_t write_some(std::span<const std::byte> data) {
+    // Writes as much of data as the socket accepts without blocking. Returns the
+    // number of bytes written, or nothing if the connection failed.
+    std::optional<std::size_t> write_some(std::span<const std::byte> data) {
         std::size_t written = 0;
         while (written < data.size()) {
             const ssize_t sent = io_.write(fd_.get(), data.subspan(written));
-            if (sent <= 0) {
+            if (sent > 0) {
+                written += static_cast<std::size_t>(sent);
+            } else if (sent < 0 && errno == EINTR) {
+                continue;
+            } else if (sent == 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
+            } else {
+                return std::nullopt;
             }
-            written += static_cast<std::size_t>(sent);
         }
         return written;
     }

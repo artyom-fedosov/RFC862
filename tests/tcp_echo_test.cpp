@@ -109,3 +109,36 @@ TEST_F(FakeConnection, RetriesInterruptedRead) {
     EXPECT_EQ(progress, rfc862::Progress::WantRead);
     EXPECT_EQ(io().written(), bytes("ok"));
 }
+
+TEST_F(FakeConnection, ClosesOnWriteError) {
+    // Given
+    io().script_read("data");
+    io().script_write({.error = EPIPE});
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::Closed);
+}
+
+TEST_F(FakeConnection, ClosesOnWriteErrorWhileFlushing) {
+    // Given
+    io().script_read("data");
+    io().script_write({.error = EAGAIN});
+    ASSERT_EQ(connection.on_readable(scratch), rfc862::Progress::WantWrite);
+    io().script_write({.error = ECONNRESET});
+    // When
+    const auto progress = connection.on_writable();
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::Closed);
+}
+
+TEST_F(FakeConnection, RetriesInterruptedWrite) {
+    // Given
+    io().script_read("data");
+    io().script_write({.error = EINTR});
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantRead);
+    EXPECT_EQ(io().written(), bytes("data"));
+}
