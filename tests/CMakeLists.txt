@@ -11,6 +11,7 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(rfc862_tests
   fd_test.cpp
+  socket_test.cpp
 )
 target_link_libraries(rfc862_tests PRIVATE rfc862_lib GTest::gtest_main)
 

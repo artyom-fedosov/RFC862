@@ -3,4 +3,5 @@
 
 export module rfc862;
 
+export import :common;
 export import :fd;
