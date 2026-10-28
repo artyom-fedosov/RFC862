@@ -3,6 +3,10 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <vector>
+
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 
@@ -153,4 +157,116 @@ TEST_F(FakeConnection, YieldsAfterReadLimitSoOtherClientsAreServed) {
     // Then
     EXPECT_EQ(progress, rfc862::Progress::WantRead);
     EXPECT_EQ(static_cast<std::size_t>(io().read_calls()), rfc862::max_reads_per_event);
+}
+
+namespace {
+
+class ConnectedSocketPair : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        std::array<int, 2> fds{-1, -1};
+        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds.data()),
+                  0);
+        connection = rfc862::TcpEchoConnection{rfc862::FileDescriptor{fds[0]}};
+        peer.reset(fds[1]);
+    }
+
+    void send(const std::vector<std::byte>& data) const {
+        ASSERT_EQ(::write(peer.get(), data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    }
+
+    void shrink_send_buffer() const {
+        const int size = 4096;
+        ASSERT_EQ(::setsockopt(connection.fd(), SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)), 0);
+    }
+
+    [[nodiscard]] static std::vector<std::byte> pattern(std::size_t size) {
+        std::vector<std::byte> result(size);
+        for (std::size_t i = 0; i < size; ++i) {
+            result[i] = static_cast<std::byte>(i * 31 % 251);
+        }
+        return result;
+    }
+
+    [[nodiscard]] std::vector<std::byte> receive_available() const {
+        std::vector<std::byte> result;
+        std::array<std::byte, 4096> chunk{};
+        ssize_t count = 0;
+        while ((count = ::read(peer.get(), chunk.data(), chunk.size())) > 0) {
+            result.insert(result.end(), chunk.begin(), chunk.begin() + count);
+        }
+        return result;
+    }
+
+    rfc862::TcpEchoConnection connection{rfc862::FileDescriptor{}};
+    rfc862::FileDescriptor peer;
+    std::vector<std::byte> scratch = std::vector<std::byte>(64UZ * 1024);
+};
+
+}  // namespace
+
+TEST_F(ConnectedSocketPair, EchoesPayloadUnchanged) {
+    // Given
+    send(bytes("hello, echo"));
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantRead);
+    EXPECT_EQ(receive_available(), bytes("hello, echo"));
+}
+
+TEST_F(ConnectedSocketPair, PreservesArbitraryBinaryBytes) {
+    // Given
+    std::vector<std::byte> payload(256);
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::byte>(i);
+    }
+    send(payload);
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantRead);
+    EXPECT_EQ(receive_available(), payload);
+}
+
+TEST_F(ConnectedSocketPair, AppliesBackpressureWhenSocketBufferIsFull) {
+    // Given
+    shrink_send_buffer();
+    send(pattern(64UZ * 1024));
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantWrite);
+    EXPECT_GT(connection.pending_bytes(), 0U);
+}
+
+TEST_F(ConnectedSocketPair, DeliversEverythingInOrderAfterBackpressure) {
+    // Given
+    shrink_send_buffer();
+    const auto payload = pattern(64UZ * 1024);
+    send(payload);
+    auto progress = connection.on_readable(scratch);
+    ASSERT_EQ(progress, rfc862::Progress::WantWrite);
+    std::vector<std::byte> echoed;
+    // When
+    while (echoed.size() < payload.size() && progress != rfc862::Progress::Closed) {
+        const auto received = receive_available();
+        echoed.insert(echoed.end(), received.begin(), received.end());
+        progress = progress == rfc862::Progress::WantWrite ? connection.on_writable()
+                                                           : connection.on_readable(scratch);
+    }
+    // Then
+    EXPECT_EQ(echoed, payload);
+    EXPECT_EQ(connection.pending_bytes(), 0U);
+}
+
+TEST_F(ConnectedSocketPair, ClosesAfterPeerShutsDownWriting) {
+    // Given
+    send(bytes("last words"));
+    ASSERT_EQ(::shutdown(peer.get(), SHUT_WR), 0);
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::Closed);
+    EXPECT_EQ(receive_available(), bytes("last words"));
 }
