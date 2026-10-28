@@ -1,0 +1,6 @@
+---
+# GoogleTest fixtures share state with their tests through protected members.
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -misc-non-private-member-variables-in-classes
