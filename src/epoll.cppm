@@ -10,6 +10,8 @@ module;
 #include <utility>
 
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 export module rfc862:epoll;
 
@@ -65,6 +67,31 @@ class Epoll {
     }
 
     explicit Epoll(FileDescriptor fd) noexcept : fd_{std::move(fd)} {}
+
+    FileDescriptor fd_;
+};
+
+class EventFd {
+  public:
+    [[nodiscard]] static Result<EventFd> create() {
+        FileDescriptor fd{::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)};
+        if (!fd) {
+            return fail();
+        }
+        return EventFd{std::move(fd)};
+    }
+
+    // Can only fail with EAGAIN when the counter would overflow, which means it is
+    // already signalled, so the result is deliberately ignored.
+    void notify() const noexcept {
+        const std::uint64_t one = 1;
+        [[maybe_unused]] const auto written = ::write(fd_.get(), &one, sizeof(one));
+    }
+
+    [[nodiscard]] int fd() const noexcept { return fd_.get(); }
+
+  private:
+    explicit EventFd(FileDescriptor fd) noexcept : fd_{std::move(fd)} {}
 
     FileDescriptor fd_;
 };

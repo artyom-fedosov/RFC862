@@ -101,3 +101,20 @@ TEST(Epoll, StopsReportingRemovedFd) {
     ASSERT_TRUE(events.has_value());
     EXPECT_TRUE(events->empty());
 }
+
+TEST(EventFd, WakesEpollWhenNotified) {
+    // Given
+    auto epoll = rfc862::Epoll::create();
+    ASSERT_TRUE(epoll.has_value()) << epoll.error().message();
+    auto event = rfc862::EventFd::create();
+    ASSERT_TRUE(event.has_value()) << event.error().message();
+    ASSERT_TRUE(epoll->add(event->fd(), EPOLLIN, 3).has_value());
+    std::array<epoll_event, 4> buffer{};
+    // When
+    event->notify();
+    // Then
+    const auto events = epoll->wait(buffer, 1000);
+    ASSERT_TRUE(events.has_value());
+    ASSERT_EQ(events->size(), 1U);
+    EXPECT_EQ(events->front().data.u64, 3U);
+}
