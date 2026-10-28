@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <cerrno>
+#include <cstdint>
 
 #include <gtest/gtest.h>
 
@@ -56,4 +57,47 @@ TEST_F(FakeUdpEcho, RetriesInterruptedReceive) {
     // Then
     ASSERT_TRUE(echoed.has_value()) << echoed.error().message();
     EXPECT_EQ(*echoed, 1U);
+}
+
+TEST_F(FakeUdpEcho, ResendsRemainderAfterPartialSend) {
+    // Given
+    for (std::uint16_t port = 1; port <= 5; ++port) {
+        io().script_incoming({.payload = bytes("d"), .peer = ipv6_peer(port)});
+    }
+    io().script_send({.max_messages = 3});
+    // When
+    const auto echoed = batch.echo_once(-1);
+    // Then
+    ASSERT_TRUE(echoed.has_value()) << echoed.error().message();
+    EXPECT_EQ(*echoed, 5U);
+    ASSERT_EQ(io().sent().size(), 5U);
+    for (std::uint16_t port = 1; port <= 5; ++port) {
+        EXPECT_TRUE(same_peer(io().sent()[port - 1U].peer, ipv6_peer(port)));
+    }
+}
+
+TEST_F(FakeUdpEcho, SkipsDatagramThatCannotBeSent) {
+    // Given
+    io().script_incoming({.payload = bytes("bad"), .peer = ipv6_peer(1)});
+    io().script_incoming({.payload = bytes("good"), .peer = ipv6_peer(2)});
+    io().script_send({.error = EPERM});
+    // When
+    const auto echoed = batch.echo_once(-1);
+    // Then
+    ASSERT_TRUE(echoed.has_value()) << echoed.error().message();
+    ASSERT_EQ(io().sent().size(), 1U);
+    EXPECT_EQ(io().sent().front().payload, bytes("good"));
+}
+
+TEST_F(FakeUdpEcho, DropsBatchRemainderWhenSendBufferIsFull) {
+    // Given
+    io().script_incoming({.payload = bytes("a"), .peer = ipv6_peer(1)});
+    io().script_incoming({.payload = bytes("b"), .peer = ipv6_peer(2)});
+    io().script_send({.error = EAGAIN});
+    // When
+    const auto echoed = batch.echo_once(-1);
+    // Then
+    ASSERT_TRUE(echoed.has_value()) << echoed.error().message();
+    EXPECT_TRUE(io().sent().empty());
+    EXPECT_EQ(io().send_calls(), 1);
 }

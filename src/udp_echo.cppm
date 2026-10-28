@@ -71,13 +71,31 @@ class BasicUdpEchoBatch {
         for (std::size_t i = 0; i < count; ++i) {
             iovecs_[i].iov_len = messages_[i].msg_len;
         }
-        io_.sendmmsg(fd, std::span{messages_}.first(count));
+        send_all(fd, std::span{messages_}.first(count));
         return count;
     }
 
     [[nodiscard]] Io& io() noexcept { return io_; }
 
   private:
+    void send_all(int fd, std::span<mmsghdr> pending) {
+        while (!pending.empty()) {
+            const int sent = io_.sendmmsg(fd, pending);
+            if (sent > 0) {
+                pending = pending.subspan(static_cast<std::size_t>(sent));
+            } else if (sent < 0 && errno == EINTR) {
+                continue;
+            } else if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                // UDP is lossy by design: never stall the worker on a full send buffer.
+                break;
+            } else {
+                // sendmmsg reports an error only for the first datagram (e.g. EPERM from a
+                // firewall); skip just that one.
+                pending = pending.subspan(1);
+            }
+        }
+    }
+
     void prepare_for_receive() noexcept {
         for (std::size_t i = 0; i < udp_batch_size; ++i) {
             iovecs_[i] = {.iov_base = storage_.get() + (i * max_datagram_size),
