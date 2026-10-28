@@ -80,3 +80,69 @@ TEST(FileDescriptor, ClosesPreviousFdOnMoveAssignment) {
     EXPECT_EQ(target.get(), second);
     EXPECT_FALSE(source.valid());  // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 }
+
+TEST(FileDescriptor, GivesUpOwnershipOnRelease) {
+    // Given
+    const int raw = ::eventfd(0, EFD_CLOEXEC);
+    ASSERT_GE(raw, 0);
+    int released = -1;
+    // When
+    {
+        rfc862::FileDescriptor fd{raw};
+        released = fd.release();
+        EXPECT_FALSE(fd.valid());
+    }
+    // Then
+    EXPECT_EQ(released, raw);
+    EXPECT_TRUE(is_open(raw));
+    ::close(raw);
+}
+
+TEST(FileDescriptor, ClosesOldFdAndAdoptsNewOnReset) {
+    // Given
+    const int first = ::eventfd(0, EFD_CLOEXEC);
+    const int second = ::eventfd(0, EFD_CLOEXEC);
+    ASSERT_GE(first, 0);
+    ASSERT_GE(second, 0);
+    rfc862::FileDescriptor fd{first};
+    // When
+    fd.reset(second);
+    // Then
+    EXPECT_FALSE(is_open(first));
+    EXPECT_EQ(fd.get(), second);
+}
+
+TEST(FileDescriptor, BecomesInvalidOnResetWithoutArgument) {
+    // Given
+    const int raw = ::eventfd(0, EFD_CLOEXEC);
+    ASSERT_GE(raw, 0);
+    rfc862::FileDescriptor fd{raw};
+    // When
+    fd.reset();
+    // Then
+    EXPECT_FALSE(is_open(raw));
+    EXPECT_FALSE(fd.valid());
+}
+
+TEST(FileDescriptor, ExchangesFdsOnSwap) {
+    // Given
+    const int first = ::eventfd(0, EFD_CLOEXEC);
+    const int second = ::eventfd(0, EFD_CLOEXEC);
+    ASSERT_GE(first, 0);
+    ASSERT_GE(second, 0);
+    rfc862::FileDescriptor a{first};
+    rfc862::FileDescriptor b{second};
+    // When
+    swap(a, b);
+    // Then
+    EXPECT_EQ(a.get(), second);
+    EXPECT_EQ(b.get(), first);
+}
+
+TEST(FileDescriptor, IsExactlyAsLargeAsAnInt) {
+    // Given
+    // When
+    constexpr auto size = sizeof(rfc862::FileDescriptor);
+    // Then
+    EXPECT_EQ(size, sizeof(int));
+}
