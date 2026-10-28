@@ -14,9 +14,11 @@ add_executable(rfc862_tests
   fd_test.cpp
   socket_test.cpp
   tcp_echo_test.cpp
+  udp_echo_test.cpp
 )
 target_sources(rfc862_tests
   PRIVATE FILE_SET CXX_MODULES FILES
+    doubles/fake_datagram_io.cppm
     doubles/fake_stream_io.cppm
 )
 target_link_libraries(rfc862_tests PRIVATE rfc862_lib GTest::gtest_main)

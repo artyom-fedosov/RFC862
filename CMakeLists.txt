@@ -45,6 +45,7 @@ target_sources(rfc862_lib
     src/socket.cppm
     src/epoll.cppm
     src/tcp_echo.cppm
+    src/udp_echo.cppm
 )
 target_link_libraries(rfc862_lib PUBLIC rfc862_options)
 
