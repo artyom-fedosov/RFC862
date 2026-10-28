@@ -27,3 +27,15 @@ TEST(Server, EchoesOverTcp) {
     // Then
     EXPECT_EQ(rfc862::test::receive_exactly(client, 12), bytes("hello server"));
 }
+
+TEST(Server, EchoesOverUdp) {
+    // Given
+    auto server = rfc862::Server::start(test_options());
+    ASSERT_TRUE(server.has_value()) << server.error().message();
+    const auto client = rfc862::test::connect_udp(server->udp_port());
+    ASSERT_TRUE(client.valid());
+    // When
+    ASSERT_TRUE(rfc862::test::send_all(client, bytes("datagram")));
+    // Then
+    EXPECT_EQ(rfc862::test::receive_exactly(client, 8), bytes("datagram"));
+}

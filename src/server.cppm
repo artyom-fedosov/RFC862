@@ -25,6 +25,7 @@ import :epoll;
 import :fd;
 import :socket;
 import :tcp_echo;
+import :udp_echo;
 
 namespace rfc862 {
 
@@ -36,32 +37,41 @@ constexpr std::size_t max_accepts_per_event = 64;
 // Epoll tags. Connections are tagged with their (non-negative) descriptor, so these
 // values can never collide with one.
 constexpr std::uint64_t listener_tag = ~std::uint64_t{0};
-constexpr std::uint64_t stop_tag = ~std::uint64_t{0} - 1;
+constexpr std::uint64_t udp_tag = ~std::uint64_t{0} - 1;
+constexpr std::uint64_t stop_tag = ~std::uint64_t{0} - 2;
 
 class Worker {
   public:
-    [[nodiscard]] static Result<std::unique_ptr<Worker>> create(std::uint16_t port,
+    [[nodiscard]] static Result<std::unique_ptr<Worker>> create(std::uint16_t tcp_port,
+                                                                std::uint16_t udp_port,
                                                                 const EventFd& stop) {
         auto epoll = Epoll::create();
         if (!epoll) {
             return std::unexpected{epoll.error()};
         }
-        auto listener = make_tcp_listener(port);
+        auto listener = make_tcp_listener(tcp_port);
         if (!listener) {
             return std::unexpected{listener.error()};
+        }
+        auto udp = make_udp_socket(udp_port);
+        if (!udp) {
+            return std::unexpected{udp.error()};
         }
         // Everything is level-triggered: a socket left with work after its fairness
         // cap is simply reported again on the next round.
         for (const auto& [fd, tag] :
-             {std::pair{listener->get(), listener_tag}, std::pair{stop.fd(), stop_tag}}) {
+             {std::pair{listener->get(), listener_tag}, std::pair{udp->get(), udp_tag},
+              std::pair{stop.fd(), stop_tag}}) {
             if (auto added = epoll->add(fd, EPOLLIN, tag); !added) {
                 return std::unexpected{added.error()};
             }
         }
-        return std::unique_ptr<Worker>{new Worker{std::move(*epoll), std::move(*listener)}};
+        return std::unique_ptr<Worker>{
+            new Worker{std::move(*epoll), std::move(*listener), std::move(*udp)}};
     }
 
     [[nodiscard]] int listener_fd() const noexcept { return listener_.get(); }
+    [[nodiscard]] int udp_fd() const noexcept { return udp_.get(); }
 
     // Serves clients until the stop eventfd is signalled.
     void run() {
@@ -78,6 +88,9 @@ class Worker {
                     case listener_tag:
                         accept_clients();
                         break;
+                    case udp_tag:
+                        udp_echo_.echo_all(udp_.get());
+                        break;
                     default:
                         serve(static_cast<int>(event.data.u64), event.events);
                         break;
@@ -87,8 +100,11 @@ class Worker {
     }
 
   private:
-    Worker(Epoll epoll, FileDescriptor listener)
-        : epoll_{std::move(epoll)}, listener_{std::move(listener)}, scratch_(scratch_size) {}
+    Worker(Epoll epoll, FileDescriptor listener, FileDescriptor udp)
+        : epoll_{std::move(epoll)},
+          listener_{std::move(listener)},
+          udp_{std::move(udp)},
+          scratch_(scratch_size) {}
 
     void accept_clients() {
         for (std::size_t accepted = 0; accepted < max_accepts_per_event; ++accepted) {
@@ -140,6 +156,8 @@ class Worker {
 
     Epoll epoll_;
     FileDescriptor listener_;
+    FileDescriptor udp_;
+    UdpEchoBatch udp_echo_;
     std::vector<std::byte> scratch_;
     std::unordered_map<int, TcpEchoConnection> connections_;
 };
@@ -168,23 +186,30 @@ class Server {
         const unsigned count = options.workers != 0
                                    ? options.workers
                                    : std::max(1U, std::thread::hardware_concurrency());
-        std::uint16_t port = options.port;
+        std::uint16_t tcp_port = options.port;
+        std::uint16_t udp_port = options.port;
         for (unsigned i = 0; i < count; ++i) {
-            auto worker = Worker::create(port, *server.stop_);
+            auto worker = Worker::create(tcp_port, udp_port, *server.stop_);
             if (!worker) {
                 return std::unexpected{worker.error()};
             }
             if (i == 0) {
-                // With port 0 the kernel picks a port; the other workers share it.
-                auto bound = local_port((*worker)->listener_fd());
-                if (!bound) {
-                    return std::unexpected{bound.error()};
+                // With port 0 the kernel picks the ports; the other workers share them.
+                auto bound_tcp = local_port((*worker)->listener_fd());
+                if (!bound_tcp) {
+                    return std::unexpected{bound_tcp.error()};
                 }
-                port = *bound;
+                auto bound_udp = local_port((*worker)->udp_fd());
+                if (!bound_udp) {
+                    return std::unexpected{bound_udp.error()};
+                }
+                tcp_port = *bound_tcp;
+                udp_port = *bound_udp;
             }
             server.workers_.push_back(std::move(*worker));
         }
-        server.tcp_port_ = port;
+        server.tcp_port_ = tcp_port;
+        server.udp_port_ = udp_port;
         for (const auto& worker : server.workers_) {
             server.threads_.emplace_back([&worker = *worker] { worker.run(); });
         }
@@ -202,6 +227,7 @@ class Server {
     }
 
     [[nodiscard]] std::uint16_t tcp_port() const noexcept { return tcp_port_; }
+    [[nodiscard]] std::uint16_t udp_port() const noexcept { return udp_port_; }
 
     // Asks every worker to finish. Safe to call from any thread, any number of times.
     void stop() const noexcept {
@@ -228,6 +254,7 @@ class Server {
     std::vector<std::unique_ptr<Worker>> workers_;
     std::vector<std::jthread> threads_;
     std::uint16_t tcp_port_ = 0;
+    std::uint16_t udp_port_ = 0;
 };
 
 }  // namespace rfc862
