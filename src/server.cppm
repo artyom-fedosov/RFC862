@@ -236,13 +236,16 @@ class Server {
         }
     }
 
-    // Blocks until every worker has finished.
+    // Blocks until every worker has finished, then releases their resources: client
+    // connections are closed in an orderly way and the service port is freed.
     void wait() {
         for (auto& thread : threads_) {
             if (thread.joinable()) {
                 thread.join();
             }
         }
+        threads_.clear();
+        workers_.clear();
     }
 
   private:
