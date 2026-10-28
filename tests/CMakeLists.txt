@@ -13,6 +13,7 @@ add_executable(rfc862_tests
   epoll_test.cpp
   fd_test.cpp
   server_test.cpp
+  signals_test.cpp
   socket_test.cpp
   tcp_echo_test.cpp
   udp_echo_test.cpp

@@ -10,3 +10,4 @@ export import :epoll;
 export import :tcp_echo;
 export import :udp_echo;
 export import :server;
+export import :signals;
