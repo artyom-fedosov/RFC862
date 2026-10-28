@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    container: gcc:latest
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest, arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64 }
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check tag matches project version
+        run: |
+          version=$(sed -n 's/^project(rfc862 VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          tag=${GITHUB_REF_NAME#v}
+          if [ "${tag%%-*}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match project version $version"
+            exit 1
+          fi
+
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake ninja-build file
+          g++ --version
+
+      - name: Build statically linked binary
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTATIC=ON \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 4
+
+      - name: Package
+        run: |
+          file build/rfc862 | grep -q "statically linked"
+          strip -o "rfc862-${{ matrix.arch }}" build/rfc862
+          file "rfc862-${{ matrix.arch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rfc862-${{ matrix.arch }}
+          path: rfc862-${{ matrix.arch }}
+          if-no-files-found: error
+
+  smoke:
+    name: smoke ${{ matrix.arch }} on ${{ matrix.distro }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        # musl without any glibc, and a glibc distribution other than the build's.
+        distro: [alpine, fedora]
+        include:
+          - { runner: ubuntu-latest, arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64 }
+          - { distro: alpine, install: apk add --no-cache socat }
+          - { distro: fedora, install: dnf install -y -q socat }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: rfc862-${{ matrix.arch }}
+      - name: Run on ${{ matrix.distro }}
+        run: |
+          chmod +x "rfc862-${{ matrix.arch }}"
+          docker run --rm -v "$PWD:/work:ro" -w /work "${{ matrix.distro }}:latest" \
+            sh -c "${{ matrix.install }} && .github/scripts/smoke-test.sh ./rfc862-${{ matrix.arch }}"
+
+  release:
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rfc862-*
+          merge-multiple: true
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum rfc862-x86_64 rfc862-aarch64 > SHA256SUMS
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" rfc862-x86_64 rfc862-aarch64 SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes "${prerelease[@]}"
