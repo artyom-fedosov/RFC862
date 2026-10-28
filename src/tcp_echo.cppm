@@ -71,7 +71,13 @@ class BasicTcpEchoConnection {
                 // pauses while bytes are pending, so everything has been echoed by now.
                 return Progress::Closed;
             }
-            return Progress::WantRead;
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return Progress::WantRead;
+            }
+            return Progress::Closed;
         }
     }
 

@@ -89,3 +89,23 @@ TEST_F(FakeConnection, ClosesWhenPeerFinishesSending) {
     EXPECT_EQ(progress, rfc862::Progress::Closed);
     EXPECT_EQ(io().written(), bytes("bye"));
 }
+
+TEST_F(FakeConnection, ClosesOnReadError) {
+    // Given
+    io().script_read_error(ECONNRESET);
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::Closed);
+}
+
+TEST_F(FakeConnection, RetriesInterruptedRead) {
+    // Given
+    io().script_read_error(EINTR);
+    io().script_read("ok");
+    // When
+    const auto progress = connection.on_readable(scratch);
+    // Then
+    EXPECT_EQ(progress, rfc862::Progress::WantRead);
+    EXPECT_EQ(io().written(), bytes("ok"));
+}
