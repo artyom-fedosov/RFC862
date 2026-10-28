@@ -3,6 +3,7 @@
 
 module;
 
+#include <array>
 #include <cstdint>
 #include <expected>
 
@@ -28,9 +29,23 @@ Result<FileDescriptor> make_bound_socket(int type, std::uint16_t port) {
     if (!fd) {
         return fail();
     }
-    // Serve IPv4 and IPv6 from one socket regardless of the net.ipv6.bindv6only sysctl.
-    if (auto set = set_option(fd.get(), IPPROTO_IPV6, IPV6_V6ONLY, 0); !set) {
-        return std::unexpected{set.error()};
+    struct Option {
+        int level;
+        int name;
+        int value;
+    };
+    // IPV6_V6ONLY=0 serves IPv4 and IPv6 from one socket regardless of the
+    // net.ipv6.bindv6only sysctl. SO_REUSEPORT lets every worker thread bind its own
+    // socket to the same port, so the kernel balances load between them.
+    constexpr std::array options{
+        Option{.level = IPPROTO_IPV6, .name = IPV6_V6ONLY, .value = 0},
+        Option{.level = SOL_SOCKET, .name = SO_REUSEADDR, .value = 1},
+        Option{.level = SOL_SOCKET, .name = SO_REUSEPORT, .value = 1},
+    };
+    for (const auto& [level, name, value] : options) {
+        if (auto set = set_option(fd.get(), level, name, value); !set) {
+            return std::unexpected{set.error()};
+        }
     }
     sockaddr_in6 address{};
     address.sin6_family = AF_INET6;

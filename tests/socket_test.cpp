@@ -114,3 +114,27 @@ TEST(UdpSocket, IsDualStack) {
     ASSERT_TRUE(socket.has_value()) << socket.error().message();
     EXPECT_EQ(ipv6_only(socket->get()), 0);
 }
+
+TEST(TcpListener, SharesPortWithAnotherListener) {
+    // Given
+    const auto first = rfc862::make_tcp_listener(0);
+    ASSERT_TRUE(first.has_value()) << first.error().message();
+    const auto port = rfc862::local_port(first->get());
+    ASSERT_TRUE(port.has_value());
+    // When
+    const auto second = rfc862::make_tcp_listener(*port);
+    // Then
+    EXPECT_TRUE(second.has_value()) << second.error().message();
+}
+
+TEST(UdpSocket, SharesPortWithAnotherSocket) {
+    // Given
+    const auto first = rfc862::make_udp_socket(0);
+    ASSERT_TRUE(first.has_value()) << first.error().message();
+    const auto port = rfc862::local_port(first->get());
+    ASSERT_TRUE(port.has_value());
+    // When
+    const auto second = rfc862::make_udp_socket(*port);
+    // Then
+    EXPECT_TRUE(second.has_value()) << second.error().message();
+}
