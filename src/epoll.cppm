@@ -5,6 +5,7 @@ module;
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <utility>
 
@@ -27,6 +28,11 @@ class Epoll {
         return Epoll{std::move(fd)};
     }
 
+    // The tag comes back in epoll_event::data.u64 so callers can dispatch without a lookup.
+    [[nodiscard]] Result<void> add(int fd, std::uint32_t events, std::uint64_t tag) const {
+        return control(EPOLL_CTL_ADD, fd, events, tag);
+    }
+
     // Waits into a caller-owned buffer so the event loop never allocates.
     [[nodiscard]] Result<std::span<const epoll_event>> wait(std::span<epoll_event> buffer,
                                                             int timeout_ms) const {
@@ -43,6 +49,15 @@ class Epoll {
     }
 
   private:
+    [[nodiscard]] Result<void> control(int operation, int fd, std::uint32_t events,
+                                       std::uint64_t tag) const {
+        epoll_event event{.events = events, .data = {.u64 = tag}};
+        if (::epoll_ctl(fd_.get(), operation, fd, &event) != 0) {
+            return fail();
+        }
+        return {};
+    }
+
     explicit Epoll(FileDescriptor fd) noexcept : fd_{std::move(fd)} {}
 
     FileDescriptor fd_;
