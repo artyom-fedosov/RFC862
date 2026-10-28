@@ -51,6 +51,9 @@ target_sources(rfc862_lib
 )
 target_link_libraries(rfc862_lib PUBLIC rfc862_options)
 
+add_executable(rfc862 src/main.cpp)
+target_link_libraries(rfc862 PRIVATE rfc862_lib)
+
 include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(tests)

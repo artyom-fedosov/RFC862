@@ -28,3 +28,9 @@ target_link_libraries(rfc862_tests PRIVATE rfc862_lib GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(rfc862_tests DISCOVERY_MODE PRE_TEST)
+
+# The program takes no arguments: RFC 862 fixes everything.
+add_test(NAME program.RejectsArguments COMMAND rfc862 --port 8)
+set_tests_properties(program.RejectsArguments PROPERTIES
+  PASS_REGULAR_EXPRESSION "usage: rfc862\n"
+)
