@@ -33,6 +33,10 @@ class Epoll {
         return control(EPOLL_CTL_ADD, fd, events, tag);
     }
 
+    [[nodiscard]] Result<void> modify(int fd, std::uint32_t events, std::uint64_t tag) const {
+        return control(EPOLL_CTL_MOD, fd, events, tag);
+    }
+
     // Waits into a caller-owned buffer so the event loop never allocates.
     [[nodiscard]] Result<std::span<const epoll_event>> wait(std::span<epoll_event> buffer,
                                                             int timeout_ms) const {

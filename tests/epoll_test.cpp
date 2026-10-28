@@ -64,3 +64,22 @@ TEST(Epoll, ReportsReadyFdWithItsTag) {
     EXPECT_EQ((*events)[0].data.u64, tag);
     EXPECT_NE((*events)[0].events & EPOLLIN, 0U);
 }
+
+TEST(Epoll, ReportsNewInterestAfterModify) {
+    // Given
+    auto epoll = rfc862::Epoll::create();
+    ASSERT_TRUE(epoll.has_value()) << epoll.error().message();
+    const auto pipe = make_pipe();
+    ASSERT_TRUE(pipe.write_end.valid());
+    constexpr std::uint64_t tag = 7;
+    ASSERT_TRUE(epoll->add(pipe.write_end.get(), 0, tag).has_value());
+    std::array<epoll_event, 4> buffer{};
+    // When
+    const auto modified = epoll->modify(pipe.write_end.get(), EPOLLOUT, tag);
+    // Then
+    ASSERT_TRUE(modified.has_value()) << modified.error().message();
+    const auto events = epoll->wait(buffer, 1000);
+    ASSERT_TRUE(events.has_value());
+    ASSERT_EQ(events->size(), 1U);
+    EXPECT_NE(events->front().events & EPOLLOUT, 0U);
+}
