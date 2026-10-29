@@ -97,10 +97,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha256sum rfc862-x86_64 rfc862-aarch64 > SHA256SUMS
           prerelease=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             prerelease=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" rfc862-x86_64 rfc862-aarch64 SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" rfc862-x86_64 rfc862-aarch64 \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes "${prerelease[@]}"
