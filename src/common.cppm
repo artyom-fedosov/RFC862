@@ -4,11 +4,10 @@
 module;
 
 #include <cerrno>
-#include <cstdint>
-#include <expected>
-#include <system_error>
 
 export module rfc862:common;
+
+import std;
 
 export namespace rfc862 {
 

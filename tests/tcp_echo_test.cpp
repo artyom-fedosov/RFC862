@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <array>
 #include <cerrno>
-#include <cstddef>
-#include <vector>
 
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <gtest/gtest.h>
 
+import std;
 import rfc862;
 import rfc862.test.fake_stream_io;
 

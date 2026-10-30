@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <cerrno>
-#include <cstddef>
-#include <cstdint>
-#include <utility>
-#include <vector>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -12,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+import std;
 import rfc862;
 import rfc862.test.fake_datagram_io;
 import rfc862.test.fake_stream_io;

@@ -9,12 +9,8 @@
 
 module;
 
-#include <array>
 #include <cerrno>
 #include <csignal>
-#include <expected>
-#include <system_error>
-#include <utility>
 
 #include <pthread.h>
 #include <sys/signalfd.h>
@@ -22,6 +18,7 @@ module;
 
 export module rfc862:signals;
 
+import std;
 import :common;
 import :fd;
 import :server;

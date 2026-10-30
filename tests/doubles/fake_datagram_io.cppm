@@ -4,21 +4,14 @@
 
 module;
 
-#include <algorithm>
 #include <cerrno>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <deque>
-#include <limits>
-#include <span>
-#include <utility>
-#include <vector>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 
 export module rfc862.test.fake_datagram_io;
+
+import std;
 
 export namespace rfc862::test {
 

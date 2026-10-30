@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <cstdint>
-#include <system_error>
-
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -11,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+import std;
 import rfc862;
 
 namespace {

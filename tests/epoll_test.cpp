@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <array>
-#include <cstdint>
-
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 
 #include <gtest/gtest.h>
 
+import std;
 import rfc862;
 
 namespace {

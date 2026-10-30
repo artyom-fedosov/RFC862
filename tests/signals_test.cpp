@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <array>
 #include <csignal>
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib>
-#include <filesystem>
-#include <iterator>
-#include <string>
 
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -17,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+import std;
 import rfc862;
 import rfc862.test.clients;
 import rfc862.test.fake_stream_io;

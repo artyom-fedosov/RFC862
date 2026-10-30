@@ -4,22 +4,11 @@
 
 module;
 
-#include <algorithm>
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <expected>
-#include <memory>
-#include <system_error>
-#include <thread>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-
 #include <sys/epoll.h>
 
 export module rfc862:server;
 
+import std;
 import :common;
 import :epoll;
 import :fd;

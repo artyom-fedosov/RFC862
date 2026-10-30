@@ -3,16 +3,13 @@
 
 module;
 
-#include <array>
-#include <cstdint>
-#include <expected>
-
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
 export module rfc862:socket;
 
+import std;
 import :common;
 import :fd;
 

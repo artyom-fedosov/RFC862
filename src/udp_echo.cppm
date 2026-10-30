@@ -4,19 +4,14 @@
 
 module;
 
-#include <array>
 #include <cerrno>
-#include <concepts>
-#include <cstddef>
-#include <memory>
-#include <span>
-#include <utility>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 
 export module rfc862:udp_echo;
 
+import std;
 import :common;
 
 export namespace rfc862 {

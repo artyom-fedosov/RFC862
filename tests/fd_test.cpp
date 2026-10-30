@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <cerrno>
-#include <utility>
 
 #include <fcntl.h>
 #include <sys/eventfd.h>
 
 #include <gtest/gtest.h>
 
+import std;
 import rfc862;
 
 namespace {

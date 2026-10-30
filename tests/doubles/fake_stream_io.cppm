@@ -4,19 +4,13 @@
 
 module;
 
-#include <algorithm>
 #include <cerrno>
-#include <cstddef>
-#include <deque>
-#include <limits>
-#include <span>
-#include <string_view>
-#include <utility>
-#include <vector>
 
 #include <sys/types.h>
 
 export module rfc862.test.fake_stream_io;
+
+import std;
 
 export namespace rfc862::test {
 

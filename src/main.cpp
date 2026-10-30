@@ -3,9 +3,8 @@
 // signal arrives, then shuts down cleanly.
 
 #include <cstdio>
-#include <print>
-#include <system_error>
 
+import std;
 import rfc862;
 
 namespace {

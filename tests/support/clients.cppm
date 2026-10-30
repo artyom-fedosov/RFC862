@@ -4,10 +4,6 @@
 module;
 
 #include <cerrno>
-#include <cstddef>
-#include <cstdint>
-#include <span>
-#include <vector>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -17,6 +13,7 @@ module;
 
 export module rfc862.test.clients;
 
+import std;
 import rfc862;
 
 namespace rfc862::test {

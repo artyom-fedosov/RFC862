@@ -3,11 +3,11 @@
 
 module;
 
-#include <utility>
-
 #include <unistd.h>
 
 export module rfc862:fd;
+
+import std;
 
 export namespace rfc862 {
 

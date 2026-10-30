@@ -44,9 +44,9 @@ jobs:
       - name: Install build tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends cmake ninja-build socat
+          apt-get install -y --no-install-recommends ninja-build socat
+          .github/scripts/install-cmake.sh
           g++ --version
-          cmake --version
 
       - name: Lower ASLR entropy for TSan
         if: matrix.config.sanitize == 'thread'
@@ -96,25 +96,23 @@ jobs:
 
   tidy:
     runs-on: ubuntu-latest
+    # Fedora ships the newest GCC's libstdc++, whose std module Clang needs for `import std;`.
+    container: fedora:latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install newest LLVM and a C++23 standard library
+      - name: Install Clang, clang-tidy and the GCC standard library
         run: |
-          curl -fsSLo llvm.sh https://apt.llvm.org/llvm.sh
-          sudo bash llvm.sh all
-          sudo apt-get install -y --no-install-recommends ninja-build g++-14
-          echo "LLVM_VERSION=$(grep -oP '^CURRENT_LLVM_STABLE=\K[0-9]+' llvm.sh)" >> "$GITHUB_ENV"
+          dnf install -y -q clang clang-tools-extra gcc-c++ ninja-build
+          .github/scripts/install-cmake.sh
+          clang-tidy --version
       # clang-tidy cannot read GCC module files, so it runs over a Clang build.
       - name: Build with Clang
         run: |
-          CXX="clang++-$LLVM_VERSION" cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS="clang-scan-deps-$LLVM_VERSION"
+          CXX=clang++ cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           cmake --build build --parallel
       - name: Run clang-tidy
-        run: |
-          "run-clang-tidy-$LLVM_VERSION" -p build -quiet \
-            -clang-tidy-binary "clang-tidy-$LLVM_VERSION" "^$PWD/(src|tests)/"
+        run: run-clang-tidy -p build -quiet "^$PWD/(src|tests)/"
 
   actionlint:
     runs-on: ubuntu-latest

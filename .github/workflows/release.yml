@@ -34,7 +34,8 @@ jobs:
       - name: Install build tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends cmake ninja-build file
+          apt-get install -y --no-install-recommends ninja-build file
+          .github/scripts/install-cmake.sh
           g++ --version
 
       - name: Build statically linked binary

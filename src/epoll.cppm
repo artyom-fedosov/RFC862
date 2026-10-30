@@ -4,10 +4,6 @@
 module;
 
 #include <cerrno>
-#include <cstddef>
-#include <cstdint>
-#include <span>
-#include <utility>
 
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -15,6 +11,7 @@ module;
 
 export module rfc862:epoll;
 
+import std;
 import :common;
 import :fd;
 

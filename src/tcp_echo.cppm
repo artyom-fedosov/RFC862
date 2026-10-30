@@ -5,19 +5,13 @@
 module;
 
 #include <cerrno>
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
-#include <optional>
-#include <span>
-#include <utility>
-#include <vector>
 
 #include <sys/types.h>
 #include <unistd.h>
 
 export module rfc862:tcp_echo;
 
+import std;
 import :fd;
 
 export namespace rfc862 {
